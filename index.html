@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Search Client</title>
+<style>
+:root{color-scheme:dark;--bg:#000;--panel:#080808;--fg:#fff;--muted:#777;--line:#292929;--hover:#171717}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
+button,input{font:inherit}button{cursor:pointer;color:#fff;background:#171717;border:1px solid #333;border-radius:8px;padding:10px 15px;font-weight:600}button:hover{background:#242424}button:disabled{opacity:.5;cursor:wait}
+input{width:100%;min-width:0;padding:12px 13px;background:#080808;color:#fff;border:1px solid #333;border-radius:8px;outline:none}input:focus{border-color:#777}
+.hidden{display:none!important}.muted,.status{color:var(--muted)}.status{font-size:13px;min-height:20px;margin-top:10px}.status.error{color:#fff}
+.topbar{height:64px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 max(20px,calc((100vw - 1040px)/2));gap:16px}.brand{font-size:18px;font-weight:700;letter-spacing:-.3px}.account{display:flex;align-items:center;gap:10px}.account img{width:34px;height:34px;border-radius:50%;object-fit:cover;background:#222}.account-name{font-size:13px;color:#aaa;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.logout{padding:7px 11px;font-size:13px}
+main{max-width:1000px;margin:0 auto;padding:28px 20px 60px}.login-wrap{max-width:380px;margin:10vh auto 0}.login-wrap h1{font-size:26px;margin:0 0 24px}.field{display:grid;gap:7px;margin:14px 0}.field label{font-size:12px;color:var(--muted)}.login-wrap button{width:100%;margin-top:8px}.searchbar{display:flex;gap:9px}.searchbar input{flex:1}.searchbar button{flex:none;min-width:96px}.results{margin-top:30px}.result-section{margin:28px 0}.section-head{font-size:14px;color:#aaa;font-weight:600;margin:0 0 12px;letter-spacing:.2px}.count{color:var(--muted);font-weight:400;margin-left:5px}
+.profile-list{display:flex;flex-direction:column;gap:7px}.profile{display:flex;align-items:center;gap:11px;min-height:54px;padding:7px 10px;border-radius:9px;color:#fff;text-decoration:none}.profile:hover,.deck-row:hover{background:var(--hover)}.profile img{width:38px;height:38px;border-radius:50%;object-fit:cover;background:#222;flex:none}.profile-name{font-weight:550;overflow-wrap:anywhere}
+.deck-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;justify-content:start;max-width:620px}.deck-tile{display:block;min-width:0;aspect-ratio:5/7;border-radius:9px;overflow:hidden;background:#111}.deck-tile img{display:block;width:100%;height:100%;object-fit:cover}.deck-tile:hover{outline:1px solid #777;outline-offset:2px}.deck-rows{display:flex;flex-direction:column;gap:8px}.deck-row{display:flex;align-items:center;gap:14px;padding:8px;border-radius:9px;color:#fff;text-decoration:none;min-height:112px}.deck-row img{width:72px;aspect-ratio:5/7;object-fit:cover;border-radius:6px;background:#111;flex:none}.deck-info{min-width:0}.deck-title{font-weight:600;overflow-wrap:anywhere}.deck-id{font-size:12px;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}.view-switch{display:flex;gap:6px;margin:0 0 12px}.view-switch button{font-size:12px;padding:6px 11px;color:#aaa;background:#080808;border-color:#333}.view-switch button.active{color:#fff;background:#242424;border-color:#777}
+.simple-list{display:flex;flex-wrap:wrap;gap:8px}.simple-item{padding:8px 12px;border:1px solid #292929;border-radius:8px;color:#ddd;background:#080808}.empty{color:var(--muted);font-size:14px;padding:12px 0}
+@media(max-width:520px){main{padding:22px 14px 48px}.topbar{padding:0 14px}.account-name{display:none}.searchbar{gap:7px}.searchbar button{min-width:82px;padding-inline:11px}.deck-grid{gap:8px}.deck-row img{width:62px}}
+</style>
+</head>
+<body>
+<header class="topbar"><div class="brand">Search Client</div><div id="account" class="account hidden"><img id="accountPhoto" alt="" referrerpolicy="no-referrer"><span id="accountName" class="account-name"></span><button id="logoutBtn" class="logout">Log out</button></div></header>
+<main>
+<section id="loginScreen" class="login-wrap">
+ <h1>Sign in</h1>
+ <div class="field"><label for="username">Castle username</label><input id="username" autocomplete="username" placeholder="Username"></div>
+ <div class="field"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" placeholder="Password"></div>
+ <button id="loginBtn">Sign in</button>
+ <div id="loginStatus" class="status" role="status" aria-live="polite"></div>
+</section>
+<section id="searchScreen" class="hidden">
+ <div class="searchbar"><input id="searchText" placeholder="Search Castle…" autocomplete="off"><button id="searchBtn">Search</button></div>
+ <div id="status" class="status" role="status" aria-live="polite"></div>
+ <div id="formattedResults" class="results"></div>
+</section>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const ENDPOINT='https://api.castle.xyz/graphql';
+const QUERY=`query CastleExploreSearch($text: String!) {
+  exploreSearch(text: $text) {
+    users { id userId username usernameStyle { color } usernameBadge { smallBadgeUrl } photo { url avatarUrl } photoFrame { frameUrl } }
+    decks { deckId title caption initialCard { title backgroundImage { smallUrl } } }
+    tags { tag }
+    playlists { playlistId title }
+    genres { genreId name }
+  }
+}`;
+let token=localStorage.getItem('castle_search_token')||'';
+let currentUser=null;
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function safeImage(value){if(!value)return '';try{const u=new URL(value);return ['https:','http:'].includes(u.protocol)?u.href:''}catch{return ''}}
+function setStatus(el,msg,error=false){el.textContent=msg;el.classList.toggle('error',error)}
+async function gql(query,variables){
+ const headers={'Content-Type':'application/json'};if(token)headers['X-Auth-Token']=token;
+ const response=await fetch(ENDPOINT,{method:'POST',headers,body:JSON.stringify({query,variables})});
+ const body=await response.text();let data;try{data=JSON.parse(body)}catch{throw new Error(`Castle returned an unreadable response (${response.status}).`)}
+ if(!response.ok&&!data.errors)throw new Error(`Request failed (${response.status}).`);return data;
+}
+function showSignedIn(user){
+ currentUser=user;$('#loginScreen').classList.add('hidden');$('#searchScreen').classList.remove('hidden');$('#account').classList.remove('hidden');
+ $('#accountName').textContent=user.username||'Castle user';
+ const photo=safeImage(user.photo?.avatarUrl||user.photo?.url);
+ $('#accountPhoto').src=photo;$('#accountPhoto').classList.toggle('hidden',!photo);
+}
+function showSignedOut(){currentUser=null;token='';localStorage.removeItem('castle_search_token');$('#account').classList.add('hidden');$('#searchScreen').classList.add('hidden');$('#loginScreen').classList.remove('hidden');$('#password').value='';$('#formattedResults').innerHTML='';$('#searchText').value='';}
+async function verifyToken(){const r=await gql('{ me { userId username photo { url avatarUrl } } }');if(!r.data?.me)throw new Error((r.errors||[]).map(e=>e.message).join('; ')||'Your session has expired.');showSignedIn(r.data.me);}
+async function signIn(){
+ const username=$('#username').value.trim(),password=$('#password').value;if(!username||!password)throw new Error('Enter your username and password.');
+ setStatus($('#loginStatus'),'Signing in…');
+ const lookup=await gql('query($u:String!){userForLoginInput(who:$u){userId}}',{u:username});const userId=lookup.data?.userForLoginInput?.userId;
+ if(!userId)throw new Error((lookup.errors||[]).map(e=>e.message).join('; ')||'Castle account not found.');
+ const login=await gql('mutation($userId:ID!,$password:String!){login(userId:$userId,password:$password){userId token}}',{userId,password});const result=login.data?.login;
+ if(!result?.token)throw new Error((login.errors||[]).map(e=>e.message).join('; ')||'Sign-in failed.');
+ token=result.token;localStorage.setItem('castle_search_token',token);$('#password').value='';await verifyToken();setStatus($('#loginStatus'),'');$('#searchText').focus();
+}
+$('#loginBtn').addEventListener('click',async()=>{const b=$('#loginBtn');b.disabled=true;try{await signIn()}catch(e){setStatus($('#loginStatus'),e.message,true)}finally{b.disabled=false}});
+$('#password').addEventListener('keydown',e=>{if(e.key==='Enter')$('#loginBtn').click()});
+$('#logoutBtn').addEventListener('click',showSignedOut);
+function group(title,items,markup){if(!Array.isArray(items)||!items.length)return '';return `<section class="result-section"><h2 class="section-head">${esc(title)}<span class="count">${items.length}</span></h2>${markup(items)}</section>`}
+let deckMode='rows';
+function render(payload){
+ const root=payload?.data?.exploreSearch;if(!root){$('#formattedResults').innerHTML='<div class="empty">No results found.</div>';return}
+ let out='';
+ out+=group('Profiles',root.users,items=>`<div class="profile-list">${items.map(u=>{const pic=safeImage(u.photo?.avatarUrl||u.photo?.url);const href='https://castle.xyz/@'+encodeURIComponent(u.username||'');return `<a class="profile" href="${href}" target="_blank" rel="noopener noreferrer">${pic?`<img src="${esc(pic)}" alt="" loading="lazy" referrerpolicy="no-referrer">`:''}<span class="profile-name">${esc(u.username||'Unknown user')}</span></a>`}).join('')}</div>`);
+ out+=group('Decks',root.decks,items=>{const cards=items.map(d=>{const pic=safeImage(d.initialCard?.backgroundImage?.smallUrl);const href='https://castle.xyz/d/'+encodeURIComponent(d.deckId||'');const image=pic?`<img src="${esc(pic)}" alt="" loading="lazy" referrerpolicy="no-referrer">`:'';return deckMode==='grid'?`<a class="deck-tile" href="${href}" target="_blank" rel="noopener noreferrer" title="${esc(d.title||'Untitled deck')}">${image}</a>`:`<a class="deck-row" href="${href}" target="_blank" rel="noopener noreferrer">${image}<span class="deck-info"><span class="deck-title">${esc(d.title||d.caption||'Untitled deck')}</span><span class="deck-id">${esc(d.deckId||'')}</span></span></a>`}).join('');return `<div class="view-switch"><button data-mode="rows" class="${deckMode==='rows'?'active':''}">Rows</button><button data-mode="grid" class="${deckMode==='grid'?'active':''}">Grid</button></div><div class="${deckMode==='grid'?'deck-grid':'deck-rows'}">${cards}</div>`});
+ out+=group('Tags',root.tags,items=>`<div class="simple-list">${items.map(t=>`<span class="simple-item">#${esc(t.tag)}</span>`).join('')}</div>`);
+ out+=group('Playlists',root.playlists,items=>`<div class="simple-list">${items.map(p=>`<span class="simple-item">${esc(p.title||'Untitled playlist')}</span>`).join('')}</div>`);
+ out+=group('Genres',root.genres,items=>`<div class="simple-list">${items.map(g=>`<span class="simple-item">${esc(g.name||'')}</span>`).join('')}</div>`);
+ $('#formattedResults').innerHTML=out||'<div class="empty">No results found.</div>';
+ $('#formattedResults').querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>{deckMode=b.dataset.mode;render(payload)}));
+}
+async function search(){const text=$('#searchText').value.trim();if(!text){setStatus($('#status'),'Enter a search term.',true);return}const b=$('#searchBtn');b.disabled=true;setStatus($('#status'),'Searching…');try{const r=await gql(QUERY,{text});if(r.errors?.length&&!r.data?.exploreSearch)throw new Error(r.errors.map(e=>e.message).join('; '));render(r);if(r.errors?.length)setStatus($('#status'),r.errors.map(e=>e.message).join('; '),true);else setStatus($('#status'),'')}catch(e){$('#formattedResults').innerHTML=`<div class="empty">${esc(e.message)}</div>`;setStatus($('#status'),e.message,true)}finally{b.disabled=false}}
+$('#searchBtn').addEventListener('click',search);$('#searchText').addEventListener('keydown',e=>{if(e.key==='Enter')search()});
+if(token){verifyToken().catch(e=>{showSignedOut();setStatus($('#loginStatus'),'Please sign in again.',true)})}
+</script>
+</body>
+</html>
